@@ -3,18 +3,18 @@
 ###################################################
 # Enter temp variables here
 ###################################################
-DEPLOYMENT_TYPE='NSX'
+DEPLOYMENT_TYPE='NSX' # 'NSX' or 'VDS'
 
-VCENTER_VERSION=8
+VCENTER_VERSION=8 # set to 7 for vCenter 7
 VCENTER_HOSTNAME=192.168.100.50
 VCENTER_USERNAME=administrator@vsphere.local
 VCENTER_PASSWORD='VMware1!'
-K8S_SUP_CLUSTER=Cluster
-K8S_CONTENT_LIBRARY=utkg
+K8S_SUP_CLUSTER=Cluster  # Name of cluster where Supervisor is to be enabled
+K8S_CONTENT_LIBRARY=utkg # Not required for 8.0
 K8S_STORAGE_POLICY=tanzu
 K8S_MGMT_PORTGROUP='DVPG-Management-network'
-K8S_WKD0_PORTGROUP='Workload0-VDS-PG'
-K8S_WKD1_PORTGROUP='Workload1-VDS-PG'
+K8S_WKD0_PORTGROUP='Workload0-VDS-PG' # Not required for NSX 
+K8S_WKD1_PORTGROUP='Workload1-VDS-PG' # Not required for NSX
 
 export DNS_SERVER='192.168.100.1'
 export NTP_SERVER='129.6.15.28'
@@ -24,13 +24,13 @@ export MGMT_STARTING_IP='192.168.100.60'
 export MGMT_GATEWAY_IP='192.168.100.1'
 export MGMT_SUBNETMASK='255.255.254.0'
 
-#### AVI specific details
+#### AVI specific details. Not required for NSX.
 export AVI_CLOUD='domain-c9'
 export AVI_HOSTNAME=192.168.100.58
 export AVI_USERNAME=admin
 export AVI_PASSWORD='VMware1!'
 
-#### NSX specifc details
+#### NSX specifc details, Not required for VDS. 
 export NSX_MANAGER=192.168.100.59
 export NSX_USERNAME='admin'
 export NSX_PASSWORD='VMware1!VMware1!'
@@ -169,11 +169,11 @@ then
         exit 1
 fi
 
-################################################
-# Get a compatible VDS switch from vCenter
-###############################################
 if [ ${DEPLOYMENT_TYPE} == "NSX" ]
 then
+        ################################################
+        # Get a compatible VDS switch from vCenter
+        ###############################################
         echo "Searching for NSX compatible VDS switch ..."
         response=$(curl -ks --write-out "%{http_code}" -X POST  -H "${HEADER_SESSIONID}" https://${VCENTER_HOSTNAME}/api/vcenter/namespace-management/networks/nsx/distributed-switches?action=check_compatibility --output /tmp/temp_vds.json)
         if [[ "${response}" -ne 200 ]] ; then
@@ -187,6 +187,9 @@ then
                 exit 1
         fi
 
+        ################################################
+        # Get a Edge cluster ID from NSX Manager
+        ###############################################
         echo "Searching for Edge cluster in NSX Manager ..."
 	response=$(curl -ks --write-out "%{http_code}" -X GET -u "${NSX_USERNAME}:${NSX_PASSWORD}" -H 'Content-Type: application/json' https://${NSX_MANAGER}/api/v1/edge-clusters --output /tmp/temp_edgeclusters.json)
         if [[ "${response}" -ne 200 ]] ; then
@@ -200,6 +203,9 @@ then
                 exit 1
         fi
 
+        ################################################
+        # Get a Tier0 ID from NSX Manager
+        ###############################################
         echo "Searching for Tier0 in NSX Manager ..."
 	response=$(curl -ks --write-out "%{http_code}" -X GET -u "${NSX_USERNAME}:${NSX_PASSWORD}" -H 'Content-Type: application/json' https://${NSX_MANAGER}/policy/api/v1/infra/tier-0s --output /tmp/temp_t0s.json)
         if [[ "${response}" -ne 200 ]] ; then
@@ -223,7 +229,7 @@ then
 fi
 
 ################################################
-# Get WORKLOAD Network exists for VDS
+# Get WORKLOAD Network for VDS
 ###############################################
 if [ ${DEPLOYMENT_TYPE} == "VDS" ]
 then
@@ -240,14 +246,14 @@ then
 fi
 
 ################################################
-# Get cluster details from vCenter
+# Enable Supervisor and cleanup
 ###############################################
 envsubst < cluster.json > temp_final.json
 
 echo "Enabling WCP on cluster ${TKGClusterID} ..."
 curl -ks -X POST -H "${HEADER_SESSIONID}" -H "${HEADER_CONTENTTYPE}" -d "@temp_final.json" https://${VCENTER_HOSTNAME}/api/vcenter/namespace-management/clusters/${TKGClusterID}?action=enable
 
-#while configuring, keep checking for the status of the Supervisor until ready
+# TODO while configuring, keep checking for the status of the Supervisor until ready
 
 rm -f /tmp/temp_*.*
 rm -f temp_final.json
