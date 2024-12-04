@@ -4,17 +4,17 @@
     "image_storage": {
         "storage_policy": "${TKGStoragePolicy}"
     },
-    "Master_DNS_names": [ "wcp.env1.lab.test" ],
+    "Master_DNS_names": [ "wcp.${DNS_SEARCHDOMAIN}" ],
     "cluster_proxy_config": {
         "proxy_settings_source": "VC_INHERITED"
     },
     "default_image_repository": "",
-    "login_banner": "You are connected to ubuntu-nv-05 Supervisor",
-    "master_DNS": [ "192.168.100.1" ],
-    "worker_DNS": [ "192.168.100.1" ],
-    "master_DNS_search_domains": [ "env1.lab.test" ],
-    "master_NTP_servers": [ "ntp.vmware.com" ],
-    "workload_ntp_servers": [ "ntp.vmware.com" ],
+    "login_banner": "You are connected to Navneet's Supervisor",
+    "master_DNS": [ "${DNS_SERVER}" ],
+    "worker_DNS": [ "${DNS_SERVER}" ],
+    "master_DNS_search_domains": [ "${DNS_SEARCHDOMAIN}" ],
+    "master_NTP_servers": [ "${NTP_SERVER}" ],
+    "workload_ntp_servers": [ "${NTP_SERVER}" ],
     "network_provider": "NSXT_CONTAINER_PLUGIN",
     "size_hint": "SMALL",
     "service_cidr": {
@@ -24,9 +24,9 @@
     "master_management_network": {
         "address_range": {
             "address_count": 5,
-            "gateway": "192.168.100.1",
-            "starting_address": "192.168.100.60",
-            "subnet_mask": "255.255.254.0"
+            "gateway": "${MGMT_GATEWAY_IP}",
+            "starting_address": "${MGMT_STARTING_IP}",
+            "subnet_mask": "${MGMT_SUBNETMASK}"
         },
         "mode": "STATICRANGE",
         "network": "${TKGMgmtNetwork}"
@@ -34,19 +34,19 @@
     "ncp_cluster_network_spec": {
         "cluster_distributed_switch": "${NSX_DVS}",
         "egress_cidrs": [ {
-            "address": "10.220.8.22",
-            "prefix": 28
+            "address": "${EGRESS_CIDR}",
+            "prefix": ${EGRESS_SIZE}
         } ],
         "ingress_cidrs": [ {
-            "address": "10.220.8.0",
-            "prefix": 28
+            "address": "${INGRESS_CIDR}",
+            "prefix": ${INGRESS_SIZE}
         } ],
         "namespace_subnet_prefix": 28,
         "nsx_edge_cluster": "${NSX_EDGE_CLUSTER_ID}",
-        "nsx_tier0_gateway": "${NSX_T0_GATEWAY}",
+        "nsx_tier0_gateway": "${NSX_T0_GATEWAY_ID}",
         "pod_cidrs": [ {
-            "address": "10.244.0.0",
-            "prefix": 20
+            "address": "${NAMESPACE_CIDR}",
+            "prefix": ${NAMESPACE_SIZE}
         } ],
         "routed_mode": false
     }

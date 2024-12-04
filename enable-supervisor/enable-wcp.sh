@@ -3,38 +3,43 @@
 ###################################################
 # Enter temp variables here
 ###################################################
+DEPLOYMENT_TYPE='NSX'
 
 VCENTER_VERSION=8
 VCENTER_HOSTNAME=192.168.100.50
 VCENTER_USERNAME=administrator@vsphere.local
 VCENTER_PASSWORD='VMware1!'
-DEPLOYMENT_TYPE='VDS'
-export DNS_SERVER='192.168.100.1'
-export NTP_SERVER='time1.oc.vmware.com'
-export DNS_SEARCHDOMAIN='env1.lab.test'
-
-export MGMT_STARTING_IP='192.168.100.60'
-export MGMT_GATEWAY_CIDR='192.168.100.1/24'
-
-export AVI_CLOUD='domain-c99'
-export AVI_HOSTNAME=192.168.100.58
-export AVI_USERNAME=admin
-export AVI_PASSWORD='VMware1!'
-
-export NSX_EDGE_CLUSTER_ID='408bc83a-e05a-4da5-85cf-aeb4625981c4'
-export NSX_T0_GATEWAY='16110da9-eb11-4c0d-af33-437c9dc7ed3b'
-export NSX_DVS_PORTGROUP='mgmt-vds01'
-#### TO add these
-export NSX_INGRESS_CIDR='10.220.3.16/24'
-export NSX_EGRESS_CIDR='10.220.30.80/24'
-export NSX_NAMESPACE_NETWORK='10.244.0.0/20'
-
-K8S_SUP_CLUSTER=Supervisor-Cluster
+K8S_SUP_CLUSTER=Cluster
 K8S_CONTENT_LIBRARY=utkg
 K8S_STORAGE_POLICY=tanzu
 K8S_MGMT_PORTGROUP='DVPG-Management-network'
 K8S_WKD0_PORTGROUP='Workload0-VDS-PG'
 K8S_WKD1_PORTGROUP='Workload1-VDS-PG'
+
+export DNS_SERVER='192.168.100.1'
+export NTP_SERVER='129.6.15.28'
+export DNS_SEARCHDOMAIN='env1.lab.test'
+
+export MGMT_STARTING_IP='192.168.100.60'
+export MGMT_GATEWAY_IP='192.168.100.1'
+export MGMT_SUBNETMASK='255.255.254.0'
+
+#### AVI specific details
+export AVI_CLOUD='domain-c9'
+export AVI_HOSTNAME=192.168.100.58
+export AVI_USERNAME=admin
+export AVI_PASSWORD='VMware1!'
+
+#### NSX specifc details
+export NSX_MANAGER=192.168.100.59
+export NSX_USERNAME='admin'
+export NSX_PASSWORD='VMware1!VMware1!'
+export NSX_EDGE_CLUSTER='sup-edge-cluster'
+export NSX_T0_GATEWAY='sup-t0-gw'
+export NSX_DVS_PORTGROUP='Pacific-VDS'
+export NSX_INGRESS_CIDR='172.16.0.0/28'
+export NSX_EGRESS_CIDR='172.16.0.16/28'
+export NSX_NAMESPACE_NETWORK='10.244.0.0/20'
 
 ###################################################
 
@@ -53,15 +58,10 @@ rm -f /tmp/temp_*.*
 if [ ${DEPLOYMENT_TYPE} == "VDS" ]
 then
         cp sample-vds-80.json cluster.json
-else
-        cp sample-nsx-80.json cluster.json
-fi
 
-################################################
-# Get NSXALB CA CERT
-###############################################
-if [ ${DEPLOYMENT_TYPE} == "VDS" ]
-then
+        ################################################
+        # Get NSXALB CA CERT
+        ###############################################
         echo "Getting NSX ALB CA Certificate for  ${AVI_HOSTNAME} ..."
         openssl s_client -showcerts -connect ${AVI_HOSTNAME}:443  </dev/null 2>/dev/null|sed -ne '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' > /tmp/temp_avi-ca.cert
         if [ ! -s /tmp/temp_avi-ca.cert ]
@@ -70,6 +70,9 @@ then
                 exit 1
         fi
         export AVI_CACERT=$(jq -sR . /tmp/temp_avi-ca.cert)
+
+else
+        cp sample-nsx-80.json cluster.json
 fi
 
 ################################################
@@ -112,7 +115,7 @@ fi
 # Get content library details from vCenter
 ###############################################
 if [[ ${VCENTER_VERSION} -eq 7 ]] ; then
-	
+
 	echo "Searching for Content Library ${K8S_CONTENT_LIBRARY} ..."
 	response=$(curl -ks --write-out "%{http_code}" -X POST -H "${HEADER_SESSIONID}" -H "${HEADER_CONTENTTYPE}" -d "$(content_library_json)" https://${VCENTER_HOSTNAME}/api/content/library?action=find --output /tmp/temp_contentlib.json)
 	if [[ "${response}" -ne 200 ]] ; then
@@ -126,7 +129,7 @@ if [[ ${VCENTER_VERSION} -eq 7 ]] ; then
         	echo "Error: Could not fetch content library - ${K8S_CONTENT_LIBRARY} . Please validate!!"
         	exit 1
 	fi
-	cp sample-vds-70.json cluster.json 
+	cp sample-vds-70.json cluster.json
 fi
 
 ################################################
@@ -183,6 +186,40 @@ then
                 echo "Error: Could not fetch NSX compatible VDS - ${NSX_DVS_PORTGROUP} . Please validate!!"
                 exit 1
         fi
+
+        echo "Searching for Edge cluster in NSX Manager ..."
+	response=$(curl -ks --write-out "%{http_code}" -X GET -u "${NSX_USERNAME}:${NSX_PASSWORD}" -H 'Content-Type: application/json' https://${NSX_MANAGER}/api/v1/edge-clusters --output /tmp/temp_edgeclusters.json)
+        if [[ "${response}" -ne 200 ]] ; then
+                echo "Error: Could not fetch Edge Cluster details. Please validate!!"
+                exit 1
+	fi
+	export NSX_EDGE_CLUSTER_ID=$(jq -r --arg NSX_EDGE_CLUSTER "$NSX_EDGE_CLUSTER" '.results[] | select( .display_name == $NSX_EDGE_CLUSTER)|.id' /tmp/temp_edgeclusters.json)
+        if [ -z "${NSX_EDGE_CLUSTER_ID}" ]
+        then
+                echo "Error: Could not fetch NSX Edge cluster - ${NSX_EDGE_CLUSTER} . Please validate!!"
+                exit 1
+        fi
+
+        echo "Searching for Tier0 in NSX Manager ..."
+	response=$(curl -ks --write-out "%{http_code}" -X GET -u "${NSX_USERNAME}:${NSX_PASSWORD}" -H 'Content-Type: application/json' https://${NSX_MANAGER}/policy/api/v1/infra/tier-0s --output /tmp/temp_t0s.json)
+        if [[ "${response}" -ne 200 ]] ; then
+                echo "Error: Could not fetch Tier0 details. Please validate!!"
+                exit 1
+	fi
+	export NSX_T0_GATEWAY_ID=$(jq -r --arg NSX_T0_GATEWAY "$NSX_T0_GATEWAY" '.results[] | select( .display_name == $NSX_T0_GATEWAY)|.id' /tmp/temp_t0s.json)
+        if [ -z "${NSX_T0_GATEWAY_ID}" ]
+        then
+                echo "Error: Could not fetch NSX T0 - ${NSX_T0_GATEWAY} . Please validate!!"
+                exit 1
+        fi
+
+	echo "Filtering Egress, Ingress and Namespace CIDR"
+	export INGRESS_CIDR=$(echo "${NSX_INGRESS_CIDR}"|cut -d'/' -f1)
+	export INGRESS_SIZE=$(echo "${NSX_INGRESS_CIDR}"|cut -d'/' -f2)
+	export EGRESS_CIDR=$(echo "${NSX_EGRESS_CIDR}"|cut -d'/' -f1)
+	export EGRESS_SIZE=$(echo "${NSX_EGRESS_CIDR}"|cut -d'/' -f2)
+	export NAMESPACE_CIDR=$(echo "${NSX_NAMESPACE_NETWORK}"|cut -d'/' -f1)
+	export NAMESPACE_SIZE=$(echo "${NSX_NAMESPACE_NETWORK}"|cut -d'/' -f2)
 fi
 
 ################################################
